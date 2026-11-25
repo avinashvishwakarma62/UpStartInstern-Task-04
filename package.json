@@ -1,0 +1,33 @@
+
+{
+  "name": "upstartinstern-task-04",
+  "version": "1.0.0",
+  "description": "Authenticated Student Management System using Node.js, Express, SQLite and JWT",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=24.0.0 <25.0.0"
+  },
+  "keywords": [
+    "nodejs",
+    "express",
+    "sqlite",
+    "jwt",
+    "authentication",
+    "student-management"
+  ],
+  "author": "Avinash Vishwakarma",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^13.2.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.10",
+    "express": "^5.3.0",
+    "jsonwebtoken": "^9.0.3"
+  },
+  "type": "commonjs"
+}

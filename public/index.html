@@ -1,0 +1,107 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudentHub | Management System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <header class="navbar">
+        <h2>Student<span>Hub.</span></h2>
+        <p>Student Management System</p>
+    </header>
+
+    <main class="container">
+
+        <section class="welcome">
+            <div>
+                <p class="eyebrow">DASHBOARD</p>
+                <h1>Manage Your Students</h1>
+                <p>Keep all your student records organized in one place.</p>
+            </div>
+            <button id="addBtn">+ Add Student</button>
+        </section>
+
+        <section class="stats">
+            <div class="stat-card">
+                <p>Total Students</p>
+                <h2 id="totalStudents">0</h2>
+            </div>
+            <div class="stat-card">
+                <p>System Status</p>
+                <h2 class="online">Online</h2>
+            </div>
+        </section>
+
+        <section class="form-card" id="studentFormSection" hidden>
+            <h2 id="formTitle">Add New Student</h2>
+
+            <form id="studentForm">
+                <input type="hidden" id="studentId">
+
+                <label for="name">Full Name</label>
+                <input id="name" type="text"
+                    placeholder="Enter student name" required>
+
+                <label for="email">Email Address</label>
+                <input id="email" type="email"
+                    placeholder="Enter email address" required>
+
+                <label for="course">Course</label>
+                <input id="course" type="text"
+                    placeholder="Enter course name" required>
+
+                <div class="form-actions">
+                    <button type="submit" id="saveBtn">Save Student</button>
+                    <button type="button" id="cancelBtn" class="secondary">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+        </section>
+
+        <section class="table-card">
+            <div class="table-heading">
+                <div>
+                    <h2>Student Records</h2>
+                    <p>View and manage registered students.</p>
+                </div>
+
+                <input type="search" id="searchInput"
+                    placeholder="Search students...">
+            </div>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Course</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="studentList">
+                        <tr>
+                            <td colspan="5">Loading students...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <p id="message"></p>
+        </section>
+
+    </main>
+
+    <footer>
+        <p>© 2026 StudentHub. Built by Avinash Vishwakarma.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
