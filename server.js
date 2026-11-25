@@ -6,32 +6,55 @@ const cors = require("cors");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const db = require("./database/db");
+
+const { sql, initDb } = require("./database/db");
 
 const app = express();
+
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET;
 
-// Check environment variables
 if (!JWT_SECRET) {
     throw new Error("JWT_SECRET missing in .env file");
 }
 
 // Middleware
-app.use(cors({
-    origin: [
-        "http://127.0.0.1:5500",
-        "http://localhost:5500",
-        "http://localhost:3000"
-    ]
-}));
-
+app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
+
+// Initialize database once
+const dbReady = initDb();
+
+app.use(async (req, res, next) => {
+    try {
+        await dbReady;
+        next();
+    } catch (error) {
+        console.error("Database initialization error:", error);
+        res.status(500).json({
+            message: "Database connection failed"
+        });
+    }
+});
 
 // Email validation
 function isValidEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+// Validate student ID
+function getStudentId(req, res) {
+    const id = Number(req.params.id);
+
+    if (!Number.isInteger(id) || id <= 0) {
+        res.status(400).json({
+            message: "Invalid student ID"
+        });
+        return null;
+    }
+
+    return id;
 }
 
 // Authentication middleware
@@ -56,9 +79,9 @@ function authenticateToken(req, res, next) {
     }
 }
 
-// ===============================
+// ===================================
 // REGISTER API
-// ===============================
+// ===================================
 
 app.post("/api/auth/register", async (req, res) => {
     try {
@@ -79,11 +102,12 @@ app.post("/api/auth/register", async (req, res) => {
 
         const normalizedEmail = email.trim().toLowerCase();
 
-        const existingUser = db.prepare(
-            "SELECT id FROM users WHERE email = ?"
-        ).get(normalizedEmail);
+        const existingUser = await sql`
+            SELECT id FROM users
+            WHERE email = ${normalizedEmail}
+        `;
 
-        if (existingUser) {
+        if (existingUser.length > 0) {
             return res.status(409).json({
                 message: "Email already registered"
             });
@@ -91,26 +115,29 @@ app.post("/api/auth/register", async (req, res) => {
 
         const passwordHash = await bcrypt.hash(password, 12);
 
-        const result = db.prepare(`
+        const result = await sql`
             INSERT INTO users (name, email, password_hash)
-            VALUES (?, ?, ?)
-        `).run(
-            name.trim(),
-            normalizedEmail,
-            passwordHash
-        );
+            VALUES (
+                ${name.trim()},
+                ${normalizedEmail},
+                ${passwordHash}
+            )
+            RETURNING id, name, email
+        `;
 
         res.status(201).json({
             message: "Registration successful",
-            user: {
-                id: result.lastInsertRowid,
-                name: name.trim(),
-                email: normalizedEmail
-            }
+            user: result[0]
         });
 
     } catch (error) {
         console.error("Registration error:", error);
+
+        if (error.code === "23505") {
+            return res.status(409).json({
+                message: "Email already registered"
+            });
+        }
 
         res.status(500).json({
             message: "Registration failed"
@@ -118,9 +145,9 @@ app.post("/api/auth/register", async (req, res) => {
     }
 });
 
-// ===============================
+// ===================================
 // LOGIN API
-// ===============================
+// ===================================
 
 app.post("/api/auth/login", async (req, res) => {
     try {
@@ -136,15 +163,20 @@ app.post("/api/auth/login", async (req, res) => {
             });
         }
 
-        const user = db.prepare(
-            "SELECT * FROM users WHERE email = ?"
-        ).get(email.trim().toLowerCase());
+        const normalizedEmail = email.trim().toLowerCase();
 
-        if (!user) {
+        const users = await sql`
+            SELECT * FROM users
+            WHERE email = ${normalizedEmail}
+        `;
+
+        if (users.length === 0) {
             return res.status(401).json({
                 message: "Invalid email or password"
             });
         }
+
+        const user = users[0];
 
         const passwordMatch = await bcrypt.compare(
             password,
@@ -163,9 +195,7 @@ app.post("/api/auth/login", async (req, res) => {
                 email: user.email
             },
             JWT_SECRET,
-            {
-                expiresIn: "1d"
-            }
+            { expiresIn: "1d" }
         );
 
         res.json({
@@ -187,18 +217,18 @@ app.post("/api/auth/login", async (req, res) => {
     }
 });
 
-// ===============================
+// ===================================
 // GET ALL STUDENTS
-// ===============================
+// ===================================
 
-app.get("/api/students", authenticateToken, (req, res) => {
+app.get("/api/students", authenticateToken, async (req, res) => {
     try {
-        const students = db.prepare(`
+        const students = await sql`
             SELECT id, name, email, course, created_at
             FROM students
-            WHERE user_id = ?
+            WHERE user_id = ${req.user.id}
             ORDER BY id DESC
-        `).all(req.user.id);
+        `;
 
         res.json(students);
 
@@ -211,25 +241,29 @@ app.get("/api/students", authenticateToken, (req, res) => {
     }
 });
 
-// ===============================
+// ===================================
 // GET STUDENT BY ID
-// ===============================
+// ===================================
 
-app.get("/api/students/:id", authenticateToken, (req, res) => {
+app.get("/api/students/:id", authenticateToken, async (req, res) => {
     try {
-        const student = db.prepare(`
+        const id = getStudentId(req, res);
+        if (id === null) return;
+
+        const students = await sql`
             SELECT id, name, email, course, created_at
             FROM students
-            WHERE id = ? AND user_id = ?
-        `).get(req.params.id, req.user.id);
+            WHERE id = ${id}
+            AND user_id = ${req.user.id}
+        `;
 
-        if (!student) {
+        if (students.length === 0) {
             return res.status(404).json({
                 message: "Student not found"
             });
         }
 
-        res.json(student);
+        res.json(students[0]);
 
     } catch (error) {
         console.error("Fetch student error:", error);
@@ -240,11 +274,11 @@ app.get("/api/students/:id", authenticateToken, (req, res) => {
     }
 });
 
-// ===============================
+// ===================================
 // ADD STUDENT
-// ===============================
+// ===================================
 
-app.post("/api/students", authenticateToken, (req, res) => {
+app.post("/api/students", authenticateToken, async (req, res) => {
     try {
         const { name, email, course } = req.body;
 
@@ -261,32 +295,29 @@ app.post("/api/students", authenticateToken, (req, res) => {
             });
         }
 
-        const result = db.prepare(`
-            INSERT INTO students
-            (name, email, course, user_id)
-            VALUES (?, ?, ?, ?)
-        `).run(
-            name.trim(),
-            email.trim().toLowerCase(),
-            course.trim(),
-            req.user.id
-        );
+        const normalizedEmail = email.trim().toLowerCase();
 
-        const student = db.prepare(`
-            SELECT id, name, email, course, created_at
-            FROM students
-            WHERE id = ? AND user_id = ?
-        `).get(result.lastInsertRowid, req.user.id);
+        const result = await sql`
+            INSERT INTO students
+                (name, email, course, user_id)
+            VALUES (
+                ${name.trim()},
+                ${normalizedEmail},
+                ${course.trim()},
+                ${req.user.id}
+            )
+            RETURNING id, name, email, course, created_at
+        `;
 
         res.status(201).json({
             message: "Student added successfully",
-            student
+            student: result[0]
         });
 
     } catch (error) {
         console.error("Add student error:", error);
 
-        if (error.code === "SQLITE_CONSTRAINT_UNIQUE") {
+        if (error.code === "23505") {
             return res.status(409).json({
                 message: "Student email already exists"
             });
@@ -298,12 +329,15 @@ app.post("/api/students", authenticateToken, (req, res) => {
     }
 });
 
-// ===============================
+// ===================================
 // UPDATE STUDENT
-// ===============================
+// ===================================
 
-app.put("/api/students/:id", authenticateToken, (req, res) => {
+app.put("/api/students/:id", authenticateToken, async (req, res) => {
     try {
+        const id = getStudentId(req, res);
+        if (id === null) return;
+
         const { name, email, course } = req.body;
 
         if (
@@ -319,39 +353,34 @@ app.put("/api/students/:id", authenticateToken, (req, res) => {
             });
         }
 
-        const result = db.prepare(`
-            UPDATE students
-            SET name = ?, email = ?, course = ?
-            WHERE id = ? AND user_id = ?
-        `).run(
-            name.trim(),
-            email.trim().toLowerCase(),
-            course.trim(),
-            req.params.id,
-            req.user.id
-        );
+        const normalizedEmail = email.trim().toLowerCase();
 
-        if (result.changes === 0) {
+        const result = await sql`
+            UPDATE students
+            SET
+                name = ${name.trim()},
+                email = ${normalizedEmail},
+                course = ${course.trim()}
+            WHERE id = ${id}
+            AND user_id = ${req.user.id}
+            RETURNING id, name, email, course, created_at
+        `;
+
+        if (result.length === 0) {
             return res.status(404).json({
                 message: "Student not found"
             });
         }
 
-        const student = db.prepare(`
-            SELECT id, name, email, course, created_at
-            FROM students
-            WHERE id = ? AND user_id = ?
-        `).get(req.params.id, req.user.id);
-
         res.json({
             message: "Student updated successfully",
-            student
+            student: result[0]
         });
 
     } catch (error) {
         console.error("Update error:", error);
 
-        if (error.code === "SQLITE_CONSTRAINT_UNIQUE") {
+        if (error.code === "23505") {
             return res.status(409).json({
                 message: "Student email already exists"
             });
@@ -363,21 +392,23 @@ app.put("/api/students/:id", authenticateToken, (req, res) => {
     }
 });
 
-// ===============================
+// ===================================
 // DELETE STUDENT
-// ===============================
+// ===================================
 
-app.delete("/api/students/:id", authenticateToken, (req, res) => {
+app.delete("/api/students/:id", authenticateToken, async (req, res) => {
     try {
-        const result = db.prepare(`
-            DELETE FROM students
-            WHERE id = ? AND user_id = ?
-        `).run(
-            req.params.id,
-            req.user.id
-        );
+        const id = getStudentId(req, res);
+        if (id === null) return;
 
-        if (result.changes === 0) {
+        const result = await sql`
+            DELETE FROM students
+            WHERE id = ${id}
+            AND user_id = ${req.user.id}
+            RETURNING id
+        `;
+
+        if (result.length === 0) {
             return res.status(404).json({
                 message: "Student not found"
             });
@@ -396,19 +427,31 @@ app.delete("/api/students/:id", authenticateToken, (req, res) => {
     }
 });
 
-// ===============================
+// ===================================
 // SERVER START
-// ===============================
+// ===================================
 
-const server = app.listen(PORT, () => {
-    console.log("--------------------------------");
-    console.log("StudentHub Task 04");
-    console.log("Database connected successfully!");
-    console.log("Authentication enabled!");
-    console.log(`Server running at http://localhost:${PORT}`);
-    console.log("--------------------------------");
-});
+if (require.main === module) {
+    dbReady
+        .then(() => {
+            const server = app.listen(PORT, () => {
+                console.log("--------------------------------");
+                console.log("StudentHub Task 04");
+                console.log("Neon PostgreSQL connected!");
+                console.log("JWT Authentication enabled!");
+                console.log(`Server running at http://localhost:${PORT}`);
+                console.log("--------------------------------");
+            });
 
-server.on("error", (error) => {
-    console.error("Server error:", error.message);
-});
+            server.on("error", (error) => {
+                console.error("Server error:", error.message);
+            });
+        })
+        .catch((error) => {
+            console.error("Database startup failed:", error);
+            process.exit(1);
+        });
+}
+
+// Export for deployment platforms
+module.exports = app;

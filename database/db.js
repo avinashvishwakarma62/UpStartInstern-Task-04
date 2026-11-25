@@ -1,64 +1,53 @@
 
-const Database = require("better-sqlite3");
-const path = require("path");
+require("dotenv").config();
 
-const db = new Database(
-    path.join(__dirname, "students.db")
-);
+const { neon } = require("@neondatabase/serverless");
 
-// Enable foreign keys
-db.pragma("foreign_keys = ON");
-
-// Create Users Table
-db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-`);
-
-// Create Students Table
-db.exec(`
-    CREATE TABLE IF NOT EXISTS students (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT NOT NULL UNIQUE,
-        course TEXT NOT NULL,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-`);
-
-// Check existing students table columns
-const columns = db.prepare(
-    "PRAGMA table_info(students)"
-).all();
-
-const hasUserId = columns.some(
-    column => column.name === "user_id"
-);
-
-// Add user_id to old Task 03 database
-if (!hasUserId) {
-    db.exec(`
-        ALTER TABLE students
-        ADD COLUMN user_id INTEGER REFERENCES users(id)
-    `);
-
-    console.log("Database migration completed!");
+// Check Neon connection URL
+if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL missing in .env file");
 }
 
-// Verify database tables
-const tables = db.prepare(`
-    SELECT name FROM sqlite_master
-    WHERE type = 'table'
-    AND name IN ('users', 'students')
-`).all();
+// Connect to Neon PostgreSQL
+const sql = neon(process.env.DATABASE_URL);
 
-console.log("Database connected successfully!");
-console.log("Tables ready:", tables.map(t => t.name).join(", "));
+// Initialize database tables
+async function initDb() {
+    // Users table
+    await sql`
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(150) NOT NULL,
+            email VARCHAR(255) NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+    `;
 
-module.exports = db;
+    // Students table
+    await sql`
+        CREATE TABLE IF NOT EXISTS students (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(150) NOT NULL,
+            email VARCHAR(255) NOT NULL UNIQUE,
+            course VARCHAR(200) NOT NULL,
+            user_id INTEGER REFERENCES users(id)
+                ON DELETE CASCADE,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+    `;
+
+    // Index for faster user-wise student queries
+    await sql`
+        CREATE INDEX IF NOT EXISTS idx_students_user_id
+        ON students(user_id)
+    `;
+
+    console.log("Neon PostgreSQL connected successfully!");
+    console.log("Tables ready: users, students");
+}
+
+module.exports = {
+    sql,
+    initDb
+};

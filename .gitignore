@@ -1,3 +1,8 @@
 node_modules/
 .env
-database/students.db
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+.neon
